@@ -1,10 +1,9 @@
-scipy==1.2.1
-numpy==1.18.5
-scikit-learn==0.23.2
-tensorflow==1.14.0
-keras==2.3.1
+scipy
+numpy
+scikit-learn
+tensorflow
 ledapy
 pandas
-h5py==2.10.0
+h5py
 jupyter
 matplotlib
