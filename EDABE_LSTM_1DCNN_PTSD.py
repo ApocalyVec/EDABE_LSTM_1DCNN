@@ -24,11 +24,13 @@ IMPORTANT NOTE:
 import os
 
 import matplotlib.pyplot as plt
+import mne
 import numpy as np
 import pandas as pd
 import scipy.interpolate as sc_int
 ### Deep Learning libraries
 import tensorflow as tf
+from scipy import signal
 from scipy.interpolate import interp1d
 from scipy.io import loadmat, savemat
 from tensorflow.keras.layers import BatchNormalization, Add
@@ -369,16 +371,18 @@ def automatic_EDA_correct(df, model,
         init_correct, mix_curve, final_correct)
         correct_linear = np.concatenate(tuple_concat, axis=0)
 
-        df["signal_automatic"].iloc[to_clean_segment.index.values] = moving_average(correct_linear, freq_signal / 8)
+        df.loc[to_clean_segment.index.values, 'signal_automatic'] = moving_average(correct_linear, freq_signal / 8)
 
     return df, dict_metrics
 
 
 # load teh PTSD dataset
-
+srate = 128  # hz
+high_cut = 5  # hz
 data_root = 'PTSDData/ledalab-349/C1-1-Renewal_EDA_Originaldaten'
+
 data_files = []
-for dir in [dir for dir in os.listdir(data_root) if dir.startswith('C1')]:
+for i, dir in enumerate([dir for dir in os.listdir(data_root) if dir.startswith('C1')]):
     files = [x for x in os.listdir(os.path.join(data_root, dir)) if x.endswith('acq_ledalab.mat')]
     assert len(files) == 1, f"Found {files} in {dir}"
     data_files.append(os.path.join(data_root, dir, files[0]))
@@ -390,42 +394,49 @@ for i, d_file in enumerate(data_files):
     # load the .mat file
     data = loadmat(d_file)
 
+
+    raw_data = data['data']['conductance'][0, 0][0]
+
+    raw_data_filtered = mne.filter.filter_data(raw_data, sfreq=srate, l_freq=None, h_freq=high_cut, verbose=False)
+
     # create data df
     df = pd.DataFrame({'time': data['data']['time'][0, 0][0],
-                       'rawdata': data['data']['conductance'][0, 0][0]})
+                       'rawdata': raw_data_filtered})
 
     # df_ex = pd.read_csv("Data/Corrected_oxused_expert2.csv", sep=";")
 
 
     df_result, dict_metrics = automatic_EDA_correct(df, EDABE_LSTM_1DCNN_Model,
-                                                    freq_signal=128, th_t_postprocess=2.5,
+                                                    freq_signal=srate, th_t_postprocess=2.5,
                                                     eda_signal="rawdata", time_column="time")
 
     # This code shows a piece of the signal corrected by the EDABE LSTM-1D CNN Model.
 
-    plt.figure(figsize=(17, 5))
+    fig_dir = os.path.join(os.path.dirname(d_file), 'Figures')
+    os.makedirs(fig_dir, exist_ok=True)
 
-    begin_time_s, end_time_s = 1750, 1765
+    # plot the data, every 10 seconds
+    for i in range(0, len(df_result), srate*10):
+        print(f"Saving figure {i} of {len(df_result)} to {fig_dir}", end="\r")
 
-    begin_sample, end_sample = begin_time_s * 128, end_time_s * 128
+        plt.figure(figsize=(17, 5))
 
-    time_to_plot = df_result["time"].iloc[begin_sample:end_sample]
+        time_to_plot = df_result["time"].iloc[i:i+srate*10]
 
-    rawdata_to_plot = df_result["rawdata"].iloc[begin_sample:end_sample]
-    cleandata_to_plot = df_result["cleandata"].iloc[begin_sample:end_sample]
-    autodata_to_plot = df_result["signal_automatic"].iloc[begin_sample:end_sample]
+        rawdata_to_plot = df_result["rawdata"].iloc[i:i+srate*10]
+        autodata_to_plot = df_result["signal_automatic"].iloc[i:i+srate*10]
 
-    plt.plot(time_to_plot, rawdata_to_plot, label="Raw data")
-    plt.plot(time_to_plot, cleandata_to_plot, label="Manual", c="orange")
-    plt.plot(time_to_plot, autodata_to_plot, label="Automatic", alpha=0.7, linestyle="--", c="red")
+        plt.plot(time_to_plot, rawdata_to_plot, label="Raw data")
+        plt.plot(time_to_plot, autodata_to_plot, label="Automatic", alpha=0.7, linestyle="--", c="red")
 
-    plt.legend(fontsize=14)
-    plt.grid()
+        plt.legend(fontsize=14)
+        plt.grid()
 
-    plt.ylabel(r'$\mu S$', fontsize=16)
-    plt.xlabel("Time (s)", fontsize=16)
+        plt.ylabel(r'$\mu S$', fontsize=16)
+        plt.xlabel("Time (s)", fontsize=16)
 
-    plt.show()
+        plt.savefig(os.path.join(fig_dir, f'plot_start={i/128}s_end={i/128 + 10}s.png'))
+        plt.close()
 
     # replace the rawdata with the signal_automatic in the mat file
     data['data']['conductance'][0, 0][0] = df_result["signal_automatic"].values
