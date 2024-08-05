@@ -383,17 +383,15 @@ data_root = 'PTSDData/ledalab-349/C1-1-Renewal_EDA_Originaldaten'
 
 data_files = []
 for i, dir in enumerate([dir for dir in os.listdir(data_root) if dir.startswith('C1')]):
-    files = [x for x in os.listdir(os.path.join(data_root, dir)) if x.endswith('acq_ledalab.mat')]
-    assert len(files) == 1, f"Found {files} in {dir}"
-    data_files.append(os.path.join(data_root, dir, files[0]))
-
+    for file_name in ['acq_ledalab.mat', 'ext_ledalab.mat', 'hab_ledalab.mat', 'ren_ledalab.mat']:
+        files = [x for x in os.listdir(os.path.join(data_root, dir)) if x.endswith(file_name)]
+        data_files += [os.path.join(data_root, dir, f) for f in files]
 
 for i, d_file in enumerate(data_files):
     print(f"Working on {d_file} ({i+1}/{len(data_files)})")
 
     # load the .mat file
     data = loadmat(d_file)
-
 
     raw_data = data['data']['conductance'][0, 0][0]
 
